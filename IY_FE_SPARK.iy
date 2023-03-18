@@ -1044,7 +1044,7 @@ local Plugin = {
                         n = n + 1
                         hrp.CFrame = hrp2.CFrame
                         pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack.Handcuffs) end)
-                    until ((tool.Parent ~= char or not hrp or not hrp2 or not hrp.Parent or not hrp2.Parent or n > 250) and n > 2) or n > 1000
+                    until ((tool.Parent ~= char or not hrp or not hrp2 or not hrp.Parent or not hrp2.Parent or n > 250) and n > 2) or n > 100
 
                     -- Bring the now attached player
                     if SecondUserPosition then 
