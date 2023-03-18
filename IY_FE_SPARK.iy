@@ -1,0 +1,1077 @@
+
+--[[
+- Player handler - For targetting several users/looping interactions
+- Handles targets for scripts
+- Connects to characteradded/ondied remote events to figure out who is alive and dead. (Default job start/stop behaviour)
+- Automatically update targets if necessary
+- Handles setting exceptions
+- Accepts functions which will be partaken on the target player
+- Will queue up jobs as necessary based on events to figure out if particular target user is available or not
+- Executes the jobs on a new thread via the job handler
+--]]
+
+local function getTableSize(t)
+    local count = 0
+    for _, __ in pairs(t) do
+        count = count + 1
+    end
+    return count
+end
+
+local PlayerHandler = {
+    init = false,
+    first_init = true,
+    player_added_events = {  },
+    -- player_deleted_events = {  },
+    player_custom_events = {  },
+    child_deleted_events = {  },
+    team_player_added_events = {   },
+    team_player_removed_events = {   },
+    global_player_added_event = nil,
+    global_player_removed_event = nil,
+    ignoreforcefield = false, -- Set to true if you want the command to not wait for forcefields to disappear before executing on target
+    ignorefriends = true, -- Set to true if you want the command to ignore friends
+    ignoreself = true, -- Set to true if you want the command to ignore yourself
+    looping = false, -- Set to true if you want the command to re-add target back to queue when they are alive again
+    requeue_after_job = false, -- Set to true if you want the user to be requeued as a target after the job is completed instead of upon death. (Looping also has to be on)
+    teams = game:GetService("Teams"),
+    players = game:GetService("Players"),
+    userinputservice = game:GetService("UserInputService"),
+    userinputservice_event = nil,
+    allteams = nil,
+    already_refreshing = false,
+
+    jobs_queue = { },
+    jobs_count = function(self)
+       return getTableSize(self.jobs_queue)
+    end,
+    job_thread = nil,
+    job_running = false,
+    job_handler_init = function(self)
+        
+        self.job_thread = coroutine.create(function() 
+            while self.init do
+                self.job_running = true
+                pcall(function () self:targetaction(self.jobs_queue[1]) end) -- The job itself is synchronous so will not action another job till completed
+                pcall(function () self:targetaction_stop(self.jobs_queue[1]) end)
+                if self.requeue_after_job and self.looping then table.insert(self.jobs_queue, self.jobs_queue[1]) end
+                table.remove(self.jobs_queue, 1)
+                self.job_running = false
+                if self:jobs_count() == 0 then coroutine.yield() end
+            end
+        end)
+
+    end,
+    job_handler_new = function(self, targetplayer)
+        table.insert(self.jobs_queue, targetplayer)
+        if coroutine.status(self.job_thread) == "suspended" and not self.job_running then
+            coroutine.resume(self.job_thread)   -- Wait statements in job etc will be bypassed if resumed so job_running variable will ensure this will not happen
+        end
+    end,
+
+    args = nil,
+    speaker = nil,
+    targetplayers = nil,
+    targetplayer = nil,
+    targetaction = function(self, targetplayer) -- Should always end with self:targetaction_stop(self.targetplayer)/PlayerHandler:targetaction_stop(PlayerHandler.targetplayer)
+        print("On")
+    end,
+
+    targetaction_stop = function(self, targetplayer)
+        print("Off")
+    end,
+    custom_start = function(self, targetplayer, index)
+        if self.looping then
+            if not self.requeue_after_job then
+                self.player_added_events[index] =  targetplayer.CharacterAdded:Connect(function(event_targetplayer)
+                    local playercharacter = self.players:GetPlayerFromCharacter(event_targetplayer) -- This event returns the Character not actual Player object itself so we will reference this instead
+                    self:onCharacterAdded(playercharacter, index)
+
+                    -- Rebind to new humanoid
+                    --if self.player_deleted_events[index] ~= nil then
+                    --    self.player_deleted_events[index]:Disconnect()
+                    --    self.player_deleted_events[index] = nil
+                    --
+                    --    self:custom_stop(playercharacter, index)
+                    --end
+                end)
+            end
+        end
+
+        self:onCharacterAdded(targetplayer, index)
+    end,
+    --custom_stop = function(self, targetplayer, index)
+    --    self.player_deleted_events[index] = targetplayer.Character:WaitForChild("Humanoid").Died:Connect(function()
+    --        self:StopAction(targetplayer)
+    --    end)
+    --end,
+
+    onCharacterAdded = function (self, targetplayer, index)
+        if self.ignoreforcefield then
+            self:job_handler_new(targetplayer)
+        else
+            local function onChildRemoved(instance, index)
+                if instance.Name == "ForceField" then
+                    self:job_handler_new(targetplayer)
+                end
+            end
+            
+            self.child_deleted_events[index] = targetplayer.Character.ChildRemoved:Connect(onChildRemoved)
+        end
+    end,
+
+    RefreshPlayers = function (self)
+        if not self.already_refreshing then
+            self.already_refreshing = true
+            self.jobs_queue = { }
+            pcall(function() 
+                for k,v in pairs(self.player_added_events) do
+                    self.player_added_events[k]:Disconnect()
+                end
+            end)
+            self.player_added_events = {  }
+            pcall(function()
+                for k,v in pairs(self.player_custom_events) do
+                    self.player_custom_events[k]:Disconnect()
+                end
+            end)
+            self.player_custom_events = {  }
+            --for k,v in pairs(self.player_deleted_events) do
+            --    self.player_deleted_events[k]:Disconnect()
+            --end
+            --self.player_deleted_events = {  }
+            pcall(function()
+                for k,v in pairs(self.child_deleted_events) do
+                    self.child_deleted_events[k]:Disconnect()
+                end
+            end)
+            self.child_deleted_events = {  }
+
+            self.targetplayers = getPlayer(self.args[1], self.speaker)
+            for k,v in pairs(self.targetplayers) do
+                self.targetplayer = Players[v]
+
+                if self.ignoreself and Players[v].Name == self.players.LocalPlayer.Name then
+                    continue
+                end
+                if self.ignorefriends and self.players.LocalPlayer:IsFriendsWith(game:GetService("Players"):GetUserIdFromNameAsync(Players[v].Name)) then
+                    continue
+                end
+
+                self:custom_start(Players[v], k)
+                if self.first_init and not self.ignoreforcefield then -- Considering the RefreshPlayers method will be ran several times, first_init will ensure it is only ran on the first full loop completion
+                    self:job_handler_new(Players[v])
+                end
+                --self:custom_stop(Players[v], k)
+            end
+            self.first_init = false
+            self.already_refreshing = false
+        end
+    end,
+
+    custom_Cleanup = nil,
+
+    FullCleanup = function(self)
+        self.init = false
+        self.first_init = true
+        self.already_refreshing = false
+        self.userinputservice_event:Disconnect()
+        self.userinputservice_event = nil
+        self.jobs_queue = { }
+        self.job_thread = nil
+        pcall(function() 
+            for k,v in pairs(self.player_added_events) do
+                self.player_added_events[k]:Disconnect()
+            end
+        end)
+        self.player_added_events = {  }
+        pcall(function()
+            for k,v in pairs(self.player_custom_events) do
+                self.player_custom_events[k]:Disconnect()
+            end
+        end)
+        self.player_custom_events = {  }
+        --for k,v in pairs(self.player_deleted_events) do
+        --    self.player_deleted_events[k]:Disconnect()
+        --end
+        --self.player_deleted_events = {  }
+        pcall(function()
+            for k,v in pairs(self.child_deleted_events) do
+                self.child_deleted_events[k]:Disconnect()
+            end
+        end)
+        self.child_deleted_events = {  }
+        pcall(function()
+            for k,v in pairs(self.team_player_added_events) do
+                self.team_player_added_events[k]:Disconnect()
+            end
+        end)
+        self.team_player_added_events = {   }
+        pcall(function()
+            for k,v in pairs(self.team_player_removed_events) do
+                self.team_player_removed_events[k]:Disconnect()
+            end
+        end)
+        self.team_player_removed_events = {   }
+        pcall(function()
+            self.global_player_added_event:Disconnect()
+            self.global_player_added_event = nil
+        end)
+        pcall(function()
+            self.global_player_removed_event:Disconnect()
+            self.global_player_removed_event = nil
+        end)
+        self.teams = game:GetService("Teams")
+        self.players = game:GetService("Players")
+        self.allteams = nil
+
+        self.args = nil
+        self.speaker = nil
+        self.targetplayers = nil
+        self.targetplayer = nil
+
+        if self.custom_Cleanup ~= nil then
+            self:custom_Cleanup()
+        end
+    end,
+
+    Init = function (self, args, speaker)
+
+        if self.init then
+            self:FullCleanup()
+        end
+        self.init = true
+
+        self.args = args
+        self.speaker = speaker
+
+        self:job_handler_init()
+        self:RefreshPlayers()
+
+        if self.looping then -- Updates are really only needed when looping
+            self.global_player_added_event = self.players.PlayerAdded:Connect(function()
+                self:RefreshPlayers()
+            end)
+        
+            self.global_player_removed_event = self.players.PlayerRemoving:Connect(function()
+                self:RefreshPlayers()
+            end)
+        
+            -- If player searches for a team
+            if Match(args[1],"%") then
+                
+                    -- May expand in the future to be able to target multiple teams hence leaving vars as table
+                    self.team_player_added_events[1] = self.teams:WaitForChild(args[1]:sub(2)).PlayerAdded:Connect(function(targetplayer)
+                        self:RefreshPlayers()
+                    end)
+                    
+                    self.team_player_removed_events[1] = self.teams:WaitForChild(args[1]:sub(2)).PlayerRemoved:Connect(function(targetplayer)
+                        self:RefreshPlayers()
+                    end)
+
+            end
+        end
+
+        notify("PlayerHandler","Press C to cancel command")
+        self.userinputservice_event = self.userinputservice.InputBegan:connect(function(input, gameProcessedEvent)
+            if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.C and gameProcessedEvent == false then
+                notify("PlayerHandler","Command cancelled")
+                self:FullCleanup()
+            end
+        end)
+
+    end
+}
+
+--[[
+
+Admin Handler - Allows whitelisted players to execute selected commands on your behalf
+TODO : Simplify command names and make system to only load game specific commands
+
+--]]
+local AdminHandler = {
+    whitelist = {"M9KHD", "JasonFernandoFlores", "elahatun", "willywonkylonky", "willystillwonkylonky", "JankRedneck"},
+    commands = {"help", "cancel", "makemesay", "sp_pl_bring", "sp_pl_goto", "sp_pl_makecriminal", "sp_fling", "sp_loopfling", "sp_pl_kill", "sp_pl_loopkill"},
+    chat_events = {  },
+    player_added_event = nil,
+    commands_tostring = function(self)
+        local temp = nil
+        for k,v in pairs(self.commands) do
+            if k == 1 then
+                temp = "Current commands: " .. v
+            elseif k ~= #self.commands + 1 then
+                temp = temp .. ", " .. v
+            end
+        end
+        return temp
+    end,
+    players = game:GetService("Players"),
+    welcome_msg = function(self, target)
+        return "/w " .. target.Name .. " Hello, " .. target.Name .. "!" .. " You have been granted access to Bloxie's WIP admin by " .. self.players.LocalPlayer.Name .. " please say '.b help' to get started!"
+    end,
+    help_msg = function(self, target)
+        return "/w " .. target.Name .. " To execute a command, please use the following example format : '.b sp_fling John'. You can also hide it from chat by saying the msg '/c system' first and then the command afterwards."
+    end,
+    CheckChat = function(self, target, message)
+        local serializedchat = {   }
+        local validcommand = false
+
+        for token in string.gmatch(message, "[^%s]+") do
+            table.insert(serializedchat, token)
+        end
+
+        if serializedchat[1] == ".b" then
+            
+                for k, v in pairs(self.commands) do
+                    if v == serializedchat[2] then
+                        validcommand = true
+
+                        -- Admin Handler Specific Commands/Overrides - Needs redoing
+                        -- TODO: Probably better at some point to have a system to specify the amount of arguments a command has but this is fine for now. 
+                        -- Also need to move this out of the check chats function and into its own table/database
+                        if serializedchat[2] == "help" then
+                            self:Help(target)
+                            break
+                        end
+                        if serializedchat[2] == "cancel" then
+                            execCmd("sp_playerhandler_cleanup")
+
+                            local args = {
+                                [1] = "/w " .. target.Name .. "Command cancelled",
+                                [2] = "All"
+                            }
+                            
+                            game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest"):FireServer(unpack(args))
+                            break
+                        end
+                        if serializedchat[2] == "sp_pl_goto" then
+                            execCmd("sp_pl_bring " .. target.Name .. " " .. serializedchat[3], self.players.LocalPlayer)
+
+                            local args = {
+                                [1] = "/w " .. target.Name .. " Executing command : sp_pl_bring " .. target.Name .. " " .. serializedchat[3],
+                                [2] = "All"
+                            }
+                            
+                            game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest"):FireServer(unpack(args))
+                            break
+                        end
+                        if serializedchat[2] == "sp_pl_bring" then
+                            execCmd("sp_pl_bring " .. serializedchat[3] .. " " .. target.Name, self.players.LocalPlayer)
+
+                            local args = {
+                                [1] = "/w " .. target.Name .. " Executing command : sp_pl_bring " .. serializedchat[3] .. " " .. target.Name,
+                                [2] = "All"
+                            }
+                            
+                            game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest"):FireServer(unpack(args))
+                            break
+                        end
+                        if serializedchat[2] == "sp_pl_makecriminal" then
+                            local OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
+                            local OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))
+                            if serializedchat[3] then
+                                local args = {
+                                    [1] = "/w " .. target.Name .. " Now attempting to make user " .. serializedchat[3] .. " criminal",
+                                    [2] = "All"
+                                }
+                                
+                                game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest"):FireServer(unpack(args))
+                                self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = CFrame.new(-944, 94, 2065) -- Location of criminal base
+                                if pcall(function() execCmd("sp_pl_bring " .. serializedchat[3], self.players.LocalPlayer) end) then
+                                    task.spawn(function()
+                                        wait(15)
+                                        self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
+                                    end)
+                                end
+                            else
+                                local args = {
+                                    [1] = "/w " .. target.Name .. " Now attempting to make you criminal, please stand still",
+                                    [2] = "All"
+                                }
+                                
+                                game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest"):FireServer(unpack(args))
+                                self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = CFrame.new(-944, 94, 2065) -- Location of criminal base
+                                if pcall(function() execCmd("sp_pl_bring " .. target.Name, self.players.LocalPlayer) end) then                                   
+                                    task.spawn(function()
+                                        wait(15)
+                                        self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
+                                    end)
+                                end
+                            end
+                            break
+                        end
+                        if serializedchat[2] == "makemesay" then
+                            local makemesay_message = nil
+                            local key = 0
+                            for token in string.gmatch(message, "[^%s]+") do
+                                key += 1
+                                if key == 1 or key == 2 then continue end
+                                if makemesay_message then
+                                    makemesay_message = makemesay_message .. " " .. token
+                                else
+                                    makemesay_message = token
+                                end
+                            end
+                            execCmd("chat " .. makemesay_message, self.players.LocalPlayer)
+
+                            local args = {
+                                [1] = "/w " .. target.Name .. " Executing command : makemesay " .. makemesay_message,
+                                [2] = "All"
+                            }
+                            
+                            game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest"):FireServer(unpack(args))
+                            break
+                        end
+                        if serializedchat[3] then
+                            if pcall(function() execCmd(serializedchat[2] .. " " .. serializedchat[3], self.players.LocalPlayer) end) then
+                                local args = {
+                                    [1] = "/w " .. target.Name .. " Executing command : " .. serializedchat[2] .. " " .. serializedchat[3],
+                                    [2] = "All"
+                                }
+                                
+                                game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest"):FireServer(unpack(args))
+                            end
+                        else                    
+                            local args = {
+                                [1] = "/w " .. target.Name .. " You have not specified a target!",
+                                [2] = "All"
+                            }
+                            
+                            game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest"):FireServer(unpack(args))
+                        end
+                    end
+                end
+            if not validcommand then
+                local args = {
+                    [1] = "/w " .. target.Name .. " You have not specified a valid command!",
+                    [2] = "All"
+                }
+                    
+                game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest"):FireServer(unpack(args))
+            end
+        end
+    end,
+    Welcome = function(self, target)
+        self.chat_events[#self.chat_events + 1] = target.Chatted:Connect(function(message)
+            self:CheckChat(target, message)
+        end)
+
+        local args = {
+            [1] = self:welcome_msg(target),
+            [2] = "All"
+        }
+        
+        game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest"):FireServer(unpack(args))
+    end,
+    Help = function(self, target)
+        local args = {
+            [1] = self:help_msg(target),
+            [2] = "All"
+        }
+        
+        game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest"):FireServer(unpack(args))
+        args = {
+            [1] = "/w " .. target.Name .. " " .. self:commands_tostring(),
+            [2] = "All"
+        }
+        
+        game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest"):FireServer(unpack(args))
+    end,
+    onPlayerAdded = function(self, target)
+        for k,v in pairs(self.whitelist) do
+            if target.Name == v then
+                self:Welcome(target)
+            end
+        end
+    end,
+    Init = function(self)
+        for i, player in ipairs(self.players:GetPlayers()) do
+            self:onPlayerAdded(player)
+        end
+        
+        self.player_added_event = self.players.PlayerAdded:Connect(function(target)
+            wait(5) -- Wait till user has loaded in
+            self:onPlayerAdded(target)
+        end)        
+    end,
+    Cleanup = function(self)
+        pcall(function() self.player_added_event:Disconnect() end)
+        self.player_added_event = nil
+
+        for k,v in pairs(self.chat_events) do 
+            pcall(function() self.chat_events[k]:Disconnect() end)
+        end
+        self.chat_events = {  }
+    end
+}
+
+
+-- All functions/exploits relating to autoclicking
+local AutoClicker = {
+	enabled = false,
+	players = game:GetService("Players"),
+	virtualinputmanager = game:GetService("VirtualInputManager"),
+    virtualinputmanager_events = {  },
+    userinputservice = game:GetService("UserInputService"),
+    _thread = nil,
+	mouse = nil,
+    toggle = false,
+	Start = function(self)
+        self._thread = coroutine.create(function() 
+            while self.enabled do
+                self.virtualinputmanager:SendMouseButtonEvent(self.mouse.x, self.mouse.y, 0, true, game, 1)
+                wait(0.01)
+                self.virtualinputmanager:SendMouseButtonEvent(self.mouse.x, self.mouse.y, 0, false, game, 1)
+                self.mouse = self.players.LocalPlayer:GetMouse()
+            end
+        end)
+        coroutine.resume(self._thread)
+	end,
+	Init = function(self)
+        -- If toggle not enabled, will just be holding down right click to activate, otherwise press F to toggle
+        if self.toggle then
+            self.virtualinputmanager_events[1] = self.userinputservice.InputBegan:connect(function(input, gameProcessedEvent)
+                if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.F and gameProcessedEvent == false then
+                    if self.enabled then
+                        self.enabled = false
+                    else
+                        self.enabled = true
+                        self:Start()
+                    end
+                end
+            end)
+        else
+            self.virtualinputmanager_events[1] = self.userinputservice.InputBegan:connect(function(input, gameProcessedEvent)
+                if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.F and gameProcessedEvent == false then
+                    self.enabled = true
+                    self:Start()
+                end
+            end)
+            self.virtualinputmanager_events[2] = self.userinputservice.InputEnded:connect(function(input, gameProcessedEvent)
+                if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.F and gameProcessedEvent == false then
+                    self.enabled = false
+                end
+            end)
+        end
+    end,
+    Cleanup = function(self)
+        self.virtualinputmanager_events[1]:Disconnect()
+        pcall(function() self.virtualinputmanager_events[2]:Disconnect() end)
+        self.virtualinputmanager_events = {  }
+    end
+}
+
+-- All functions/exploits relating to Prison Life
+local PrisonLife = {
+    players = game:GetService("Players"),
+    KeepPosition = true, -- When respawning or changing teams, you will go back to your original position
+    player_added_event = nil,
+    player_deleted_event = nil,
+    child_deleted_event = nil,
+    FastRespawn = function(self, team)
+        local OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
+        local OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))
+        if team == "Guards" then
+            local args = {
+                [1] = "Bright blue"
+            }
+
+            workspace:WaitForChild("Remote"):WaitForChild("TeamEvent"):FireServer(unpack(args))
+        elseif team == "Inmates" then
+            local args = {
+                [1] = "Bright orange"
+            }
+
+            workspace:WaitForChild("Remote"):WaitForChild("TeamEvent"):FireServer(unpack(args))
+        elseif team == "Criminals" then -- There is an "anticheat" stopping you from just changing direct to criminal so this is a workaround
+            local args = {
+                [1] = "Bright orange"
+            }
+            workspace:WaitForChild("Remote"):WaitForChild("TeamEvent"):FireServer(unpack(args))
+
+            wait(0.2)
+            self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = CFrame.new(-920, 100, 2138) -- Location of criminal spawn
+        end
+        
+        if self.KeepPosition then
+            wait(0.3)
+            self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
+        end
+    end,
+    FastRespawnOnDeath = function(self)
+        --local OriginalPosition = nil
+        self.player_deleted_event = self.players.LocalPlayer.Character:WaitForChild("Humanoid", 8).Died:Connect(function()
+            self:FastRespawn(self.players.LocalPlayer.Team.Name)
+        end)
+        self.player_added_event = self.players.LocalPlayer.CharacterAdded:Connect(function(event_targetplayer) -- Rebind to new Humanoids
+            self.player_deleted_event = event_targetplayer:WaitForChild("Humanoid", 8).Died:Connect(function()
+                self:FastRespawn(self.players.LocalPlayer.Team.Name)
+            end)
+        end)
+    end,
+    Godmode = function(self)
+        --local OriginalPosition = nil
+        self.player_added_event = self.players.LocalPlayer.CharacterAdded:Connect(function(event_targetplayer) -- Rebind to new Humanoids
+            local function onChildRemoved(instance, index)
+                if instance.Name == "ForceField" then
+                    self:FastRespawn(self.players.LocalPlayer.Team.Name)
+                end
+            end
+            
+            self.child_deleted_event = event_targetplayer.ChildRemoved:Connect(onChildRemoved)
+        end)
+        self:FastRespawn(self.players.LocalPlayer.Team.Name)
+    end,
+    CleanUp = function(self)
+        pcall(function() self.player_added_event:Disconnect() end)
+        self.player_added_event = nil
+        pcall(function() self.player_deleted_event:Disconnect() end)
+        self.player_deleted_event = nil
+        pcall(function() self.child_deleted_event:Disconnect() end)
+        self.child_deleted_event = nil
+    end
+}
+
+local Plugin = {
+    ["PluginName"] = "Sparks Admin IY Plugin",
+    ["PluginDescription"] = "Sparks Admin IY Plugin",
+    ["Commands"] = {
+
+        ["sp_playerhandler_cleanup"] = {
+            ["ListName"] = "sp_playerhandler_cleanup [ARGUMENT1]",
+            ["Description"] = "Cancels/Cleans up current PlayerHandler session",
+            ["Aliases"] = {"sp_cancel"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+                notify("PlayerHandler","Command cancelled")
+                PlayerHandler:FullCleanup()
+            end
+        },
+
+        ["sp_test"] = {
+            ["ListName"] = "sp_test [ARGUMENT1]",
+            ["Description"] = "sp_test",
+            ["Aliases"] = {"sp_cancel"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+                for k,v in pairs(args) do
+                    print(k .. v)
+                end
+            end
+        },
+
+        -- Admin Handler
+
+        ["sp_adminhandler"] = {
+            ["ListName"] = "sp_adminhandler",
+            ["Description"] = "Turns on the admin handler",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+                AdminHandler:Init()
+            end
+        },
+
+        ["sp_adminhandler_off"] = {
+            ["ListName"] = "sp_adminhandler_off",
+            ["Description"] = "Turns off the admin handler",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+                AdminHandler:Cleanup()
+            end
+        },
+
+        ["sp_adminhandler_tempadd"] = {
+            ["ListName"] = "sp_adminhandler_tempadd",
+            ["Description"] = "Temporarily adds target players to admin for that instance",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+
+                local players = getPlayer(args[1], speaker) 
+                for k,v in pairs(players) do
+                    AdminHandler:Welcome(Players[v])
+                end
+                
+            end
+        },
+
+        -- Autoclicking
+
+        ["sp_autoclicker_hold"] = {
+            ["ListName"] = "sp_autoclicker_hold",
+            ["Description"] = "Enables an autoclicker that will be activated on held key",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+                notify("Autoclicker","Hold down F to enable")
+                AutoClicker.toggle = false
+                AutoClicker:Init()
+            end
+        },
+
+        ["sp_autoclicker_toggle"] = {
+            ["ListName"] = "sp_autoclicker_toggle",
+            ["Description"] = "Enables a toggleable autoclicker",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+                notify("PlayerHandler","Press F to enable/disable")
+                AutoClicker.toggle = true
+                AutoClicker:Init()
+            end
+        },
+
+        ["sp_autoclicker_off"] = {
+            ["ListName"] = "sp_autoclicker_off",
+            ["Description"] = "Turns off autoclicker",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+                notify("Autoclicker","Disabled")
+                AutoClicker:Cleanup()
+            end
+        },
+
+        -- Example command utilising playerhandler
+        --[[ ["sp_example"] = {
+            ["ListName"] = "sp_example [ARGUMENT1]",
+            ["Description"] = "Example command utilising PlayerHandler",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+                PlayerHandler.targetaction = function(self, targetplayer) -- Commands that will be executed on the target user
+                    print(tostring(targetplayer.Character.Name))
+                    wait(1)
+                    -- Blocks the job till stop condition is met (i.e When the target player dies)
+                    --targetplayer.Character:WaitForChild("Humanoid").Died:Wait()
+                end
+                PlayerHandler.targetaction_stop = function(self, targetplayer) -- Commands that will be executed when the stop condition is met
+                    --print(tostring(targetplayer.Character.Name))
+                end
+                PlayerHandler.ignoreforcefield = true -- Set to true if you want the command to not wait for forcefields to disappear before executing on target
+                PlayerHandler.ignorefriends = true -- Set to true if you want the command to ignore friends
+                PlayerHandler.ignoreself = true -- Set to true if you want the command to ignore yourself
+                PlayerHandler.looping = false -- Set to true if you want the command to re-add target back to queue when they are alive again
+                PlayerHandler.requeue_after_job = false -- Set to true if you want the user to be requeued as a target after the job is completed instead of upon death. (Looping also has to be on)
+                PlayerHandler:Init(args, speaker)
+            end
+        }, ]]--
+
+        ["sp_loopview"] = {
+            ["ListName"] = "sp_loopview [ARGUMENT1]",
+            ["Description"] = "Repeatedly views through target players",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+                PlayerHandler.targetaction = function(self, targetplayer) -- Commands that will be executed on the target user
+                    execCmd("view " .. targetplayer.Name, self.args)
+                    wait(2)
+                    -- Blocks the job till stop condition is met (i.e When the target player dies)
+                    --targetplayer.Character:WaitForChild("Humanoid").Died:Wait()
+                end
+                PlayerHandler.targetaction_stop = function(self, targetplayer) -- Commands that will be executed when the stop condition is met
+                    execCmd("unview", self.args)
+                    --print(tostring(targetplayer.Character.Name))
+                end
+                PlayerHandler.ignoreforcefield = true -- Set to true if you want the command to not wait for forcefields to disappear before executing on target
+                PlayerHandler.ignorefriends = false -- Set to true if you want the command to ignore friends
+                PlayerHandler.ignoreself = true -- Set to true if you want the command to ignore yourself
+                PlayerHandler.looping = true -- Set to true if you want the command to re-add target back to queue when they are alive again
+                PlayerHandler.requeue_after_job = true -- Set to true if you want the user to be requeued as a target after the job is completed instead of upon death. (Looping also has to be on)
+                PlayerHandler:Init(args, speaker)
+            end
+        },
+
+        ["sp_fling"] = {
+            ["ListName"] = "sp_fling [ARGUMENT1]",
+            ["Description"] = "Flings target players",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+                local OriginalRotation = nil
+                local OriginalPosition = nil
+                PlayerHandler.targetaction = function(self, targetplayer) -- Commands that will be executed on the target user
+                    OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
+                    OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))
+                    execCmd("fly",speaker)
+					execCmd("fling",speaker)
+                    execCmd("tweenspeed 0.50", self.speaker)
+                    while true do
+                        self.players.LocalPlayer.Character:WaitForChild("Humanoid", 8).Sit = false
+						self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = CFrame.new(self.targetplayer.Character:WaitForChild("HumanoidRootPart", 8).position + (self.targetplayer.Character:WaitForChild("HumanoidRootPart", 8).AssemblyLinearVelocity / 2)) -- Basic movement prediction
+						execCmd("tweengoto " .. self.targetplayer.Name, self.speaker)
+                        wait(1)
+                        if targetplayer.Character:WaitForChild("Humanoid", 8).Health == 0 then break end
+                        if math.abs(self.targetplayer.Character:WaitForChild("HumanoidRootPart", 8).AssemblyLinearVelocity.y) > 200 then break end
+                        if self.targetplayer.Character:WaitForChild("Humanoid").Sit then break end
+                    end
+                end
+                PlayerHandler.targetaction_stop = function(self, targetplayer) -- Commands that will be executed when the stop condition is met
+                    execCmd("unfling",speaker)
+                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    wait(0.5)
+					execCmd("unfly",speaker)
+                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
+                end
+                PlayerHandler.ignoreforcefield = true -- Set to true if you want the command to not wait for forcefields to disappear before executing on target
+                PlayerHandler.ignorefriends = false -- Set to true if you want the command to ignore friends
+                PlayerHandler.ignoreself = true -- Set to true if you want the command to ignore yourself
+                PlayerHandler.looping = false -- Set to true if you want the command to re-add target back to queue when they are alive again
+                PlayerHandler.requeue_after_job = false -- Set to true if you want the user to be requeued as a target after the job is completed instead of upon death. (Looping also has to be on)
+                PlayerHandler:Init(args, speaker)
+            end
+        },
+
+        ["sp_loopfling"] = {
+            ["ListName"] = "sp_loopfling [ARGUMENT1]",
+            ["Description"] = "Loop flings target players",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+                local OriginalRotation = nil
+                local OriginalPosition = nil
+                PlayerHandler.targetaction = function(self, targetplayer) -- Commands that will be executed on the target user
+                    OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
+                    OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))
+                    execCmd("fly",speaker)
+					execCmd("fling",speaker)
+                    execCmd("tweenspeed 0.50", self.speaker)
+                    while true do
+                        self.players.LocalPlayer.Character:WaitForChild("Humanoid", 8).Sit = false
+						self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = CFrame.new(self.targetplayer.Character:WaitForChild("HumanoidRootPart", 8).position + (self.targetplayer.Character:WaitForChild("HumanoidRootPart", 8).AssemblyLinearVelocity / 2)) -- Basic movement prediction
+						execCmd("tweengoto " .. self.targetplayer.Name, self.speaker)
+                        wait(1)
+                        if targetplayer.Character:WaitForChild("Humanoid", 8).Health == 0 then break end
+                        if math.abs(self.targetplayer.Character:WaitForChild("HumanoidRootPart", 8).AssemblyLinearVelocity.y) > 200 then break end
+                        if self.targetplayer.Character:WaitForChild("Humanoid").Sit then break end
+                    end
+                end
+                PlayerHandler.targetaction_stop = function(self, targetplayer) -- Commands that will be executed when the stop condition is met
+                    execCmd("unfling",speaker)
+                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    wait(0.5)
+					execCmd("unfly",speaker)
+                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
+                end
+                PlayerHandler.ignoreforcefield = true -- Set to true if you want the command to not wait for forcefields to disappear before executing on target
+                PlayerHandler.ignorefriends = true -- Set to true if you want the command to ignore friends
+                PlayerHandler.ignoreself = true -- Set to true if you want the command to ignore yourself
+                PlayerHandler.looping = true -- Set to true if you want the command to re-add target back to queue when they are alive again
+                PlayerHandler.requeue_after_job = false -- Set to true if you want the user to be requeued as a target after the job is completed instead of upon death. (Looping also has to be on)
+                PlayerHandler:Init(args, speaker)
+            end
+        },
+
+        -- Prison Life
+        ["sp_pl_respawnondeath"] = {
+            ["ListName"] = "sp_pl_respawnondeath",
+            ["Description"] = "Turns on fast respawn on death",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+                --CODE HERE
+                PrisonLife.KeepPosition = true -- When respawning or changing teams, you will go back to your original position
+                PrisonLife:FastRespawnOnDeath()
+            end
+        },
+
+        ["sp_pl_respawnondeath_off"] = {
+            ["ListName"] = "sp_pl_respawnondeath_off",
+            ["Description"] = "Turns off fast respawn on death",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+                --CODE HERE
+                PrisonLife:CleanUp()
+            end
+        },
+
+        ["sp_pl_godmode"] = {
+            ["ListName"] = "sp_pl_godmode",
+            ["Description"] = "Turns on godmode",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+                --CODE HERE
+                PrisonLife.KeepPosition = true -- When respawning or changing teams, you will go back to your original position
+                PrisonLife:Godmode()
+            end
+        },
+
+        ["sp_pl_godmode_off"] = {
+            ["ListName"] = "sp_pl_godmode_off",
+            ["Description"] = "Turns off godmode",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+                --CODE HERE
+                PrisonLife:CleanUp()
+            end
+        },
+
+        ["sp_pl_changeteam"] = {
+            ["ListName"] = "sp_pl_changeteam [Inmates/Guards/Criminals]",
+            ["Description"] = "Changes team",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+                --CODE HERE
+                PrisonLife.KeepPosition = true -- When respawning or changing teams, you will go back to your original position
+                PrisonLife:FastRespawn(args[1])
+            end
+        },
+
+        ["sp_pl_kill"] = {
+            ["ListName"] = "sp_pl_kill [ARGUMENT1]",
+            ["Description"] = "Kills target players",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+                local OriginalRotation = nil
+                local OriginalPosition = nil
+                PlayerHandler.targetaction = function(self, targetplayer) -- Commands that will be executed on the target user
+                    OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
+                    OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))
+                    while true do
+                        execCmd("goto " .. targetplayer.Name, self.speaker)
+                        game:GetService("ReplicatedStorage"):WaitForChild("meleeEvent"):FireServer(targetplayer)
+                        wait(0.000001)
+                        if targetplayer.Character:WaitForChild("Humanoid", 8).Health == 0 then break end
+                    end
+                end
+                PlayerHandler.targetaction_stop = function(self, targetplayer) -- Commands that will be executed when the stop condition is met
+                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
+                end
+                PlayerHandler.ignoreforcefield = false -- Set to true if you want the command to not wait for forcefields to disappear before executing on target
+                PlayerHandler.ignorefriends = true -- Set to true if you want the command to ignore friends
+                PlayerHandler.ignoreself = true -- Set to true if you want the command to ignore yourself
+                PlayerHandler.looping = false -- Set to true if you want the command to re-add target back to queue when they are alive again
+                PlayerHandler.requeue_after_job = false -- Set to true if you want the user to be requeued as a target after the job is completed instead of upon death. (Looping also has to be on)
+                PlayerHandler:Init(args, speaker)
+            end
+        },
+
+        ["sp_pl_loopkill"] = {
+            ["ListName"] = "sp_pl_loopkill [ARGUMENT1]",
+            ["Description"] = "Repeatedly kills target players",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+                local OriginalRotation = nil
+                local OriginalPosition = nil
+                PlayerHandler.targetaction = function(self, targetplayer) -- Commands that will be executed on the target user
+                    OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
+                    OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))
+                    while true do
+                        execCmd("goto " .. targetplayer.Name, self.speaker)
+                        game:GetService("ReplicatedStorage"):WaitForChild("meleeEvent"):FireServer(targetplayer)
+                        wait(0.000001)
+                        if targetplayer.Character:WaitForChild("Humanoid", 8).Health == 0 then break end
+                    end
+                end
+                PlayerHandler.targetaction_stop = function(self, targetplayer) -- Commands that will be executed when the stop condition is met
+                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
+                end
+                PlayerHandler.ignoreforcefield = false -- Set to true if you want the command to not wait for forcefields to disappear before executing on target
+                PlayerHandler.ignorefriends = true -- Set to true if you want the command to ignore friends
+                PlayerHandler.ignoreself = true -- Set to true if you want the command to ignore yourself
+                PlayerHandler.looping = true -- Set to true if you want the command to re-add target back to queue when they are alive again
+                PlayerHandler.requeue_after_job = false -- Set to true if you want the user to be requeued as a target after the job is completed instead of upon death. (Looping also has to be on)
+                PlayerHandler:Init(args, speaker)
+            end
+        },
+
+        ["sp_pl_bring"] = {
+            ["ListName"] = "sp_pl_bring [ARGUMENT1] [ARGUMENT2]",
+            ["Description"] = "Brings target players",
+            ["Aliases"] = {"goto","bring"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+                local OriginalRotation = nil
+                local OriginalPosition = nil
+                local SecondUserPosition = nil
+                local OriginalTeam = nil
+                local CharacterAdded_Event = nil
+
+                PlayerHandler.targetaction = function(self, targetplayer) -- Commands that will be executed on the target user
+                    OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
+                    OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))          
+                    OriginalTeam = self.players.LocalPlayer.Team
+
+                    -- If the user specifies a 2nd argument, we will bring the target in the 1st argument to the 2nd argument user instead of the local player
+                    if self.args[2] then
+                        local BringToPlayer = getPlayer(args[2], speaker)
+                        for k,v in pairs(BringToPlayer) do
+                            execCmd("goto " .. Players[v].Name)
+                            SecondUserPosition = CFrame.new(Players[v].Character:WaitForChild("HumanoidRootPart", 8).position)
+                        end
+                    end
+
+                    PrisonLife:FastRespawn("Guards") 
+
+                    CharacterAdded_Event = self.players.LocalPlayer.CharacterAdded:Connect(function()
+                        --[[for i,v in pairs(self.players.LocalPlayer.Backpack:GetChildren()) do
+                            --if v:IsA("Tool") then
+                            --    pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack:FindFirstChildOfClass("Tool")) end)
+                            --end
+                        end--]]
+                         -- Handcuffs seem to work only
+                        wait(0.5)
+                        pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack.Handcuffs) end)
+                    end)
+
+                    -- Just a simple wait to make sure the player has changed team first (You could probably also just check the team change event but this is simple)
+                    wait(1)
+
+                    -- Modified from IY source code, attaches to player
+                    local char = self.players.LocalPlayer.Character
+                    local tchar = targetplayer.Character
+                    local hum = self.players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    local hrp = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8)
+                    local hrp2 = targetplayer.Character:WaitForChild("HumanoidRootPart", 8)
+                    hum.Name = "1"
+                    local newHum = hum:Clone()
+                    newHum.Parent = char
+                    newHum.Name = "Humanoid"
+                    wait()
+                    hum:Destroy()
+                    workspace.CurrentCamera.CameraSubject = char
+                    newHum.DisplayDistanceType = "None"
+                    -- local tool = speaker:FindFirstChildOfClass("Backpack"):FindFirstChildOfClass("Tool") or speaker.Character:FindFirstChildOfClass("Tool")
+                    local tool = speaker:FindFirstChildOfClass("Backpack"):WaitForChild("Handcuffs", 8) -- For some reason only handcuffs work?
+                    tool.Parent = char
+                    hrp.CFrame = hrp2.CFrame * CFrame.new(0, 0, 0) * CFrame.new(math.random(-100, 100)/200,math.random(-100, 100)/200,math.random(-100, 100)/200)
+                    local n = 0
+                    repeat
+                        wait(.1)
+                        n = n + 1
+                        hrp.CFrame = hrp2.CFrame
+                        pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack.Handcuffs) end)
+                    until ((tool.Parent ~= char or not hrp or not hrp2 or not hrp.Parent or not hrp2.Parent or n > 250) and n > 2) or n > 1000
+
+                    -- Bring the now attached player
+                    if SecondUserPosition then 
+                        self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = SecondUserPosition
+                    else
+                        self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
+                    end
+
+                    wait(0.5)
+                end
+                PlayerHandler.targetaction_stop = function(self, targetplayer) -- Commands that will be executed when the stop condition is met
+                    pcall(function() CharacterAdded_Event:Disconnect() end)
+                    CharacterAdded_Event = nil
+                    PrisonLife:FastRespawn(OriginalTeam.Name)
+                    --wait(1)
+                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
+                    --print(tostring(targetplayer.Character.Name))
+                end
+                PlayerHandler.ignoreforcefield = true -- Set to true if you want the command to not wait for forcefields to disappear before executing on target
+                PlayerHandler.ignorefriends = false -- Set to true if you want the command to ignore friends
+                PlayerHandler.ignoreself = true -- Set to true if you want the command to ignore yourself
+                PlayerHandler.looping = false -- Set to true if you want the command to re-add target back to queue when they are alive again
+                PlayerHandler.requeue_after_job = false -- Set to true if you want the user to be requeued as a target after the job is completed instead of upon death. (Looping also has to be on)
+                PlayerHandler:Init(args, speaker)
+            end
+        }
+     }
+}
+
+return Plugin
