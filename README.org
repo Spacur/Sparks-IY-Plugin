@@ -1,3 +1,5 @@
+#+BEGIN_COMMENT
 * Installation
 
 Copy the IY_FE_SPARK_INIT.iy file in this repo into your executors "Workspace" folder and then type "reloadplugin IY_FE_SPARK_INIT" into your Infinite Yield
+#+END_COMMENT
