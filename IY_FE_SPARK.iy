@@ -1088,9 +1088,6 @@ local Plugin = {
                     OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))          
                     OriginalTeam = self.players.LocalPlayer.Team
 
-                    -- If the user specifies a 2nd argument, we will bring the target in the 1st argument to the 2nd argument user instead of the local player
-
-
                     PrisonLife:FastRespawn("Guards") 
 
                     CharacterAdded_Event = self.players.LocalPlayer.CharacterAdded:Connect(function()
