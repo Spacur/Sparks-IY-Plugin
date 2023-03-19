@@ -291,7 +291,7 @@ TODO : Simplify command names and make system to only load game specific command
 --]]
 local AdminHandler = {
     whitelist = {"M9KHD", "JasonFernandoFlores", "elahatun", "willywonkylonky", "willystillwonkylonky", "JankRedneck"},
-    commands = {"help", "cancel", "makemesay", "sp_pl_bring", "sp_pl_goto", "sp_pl_makecriminal", "sp_fling", "sp_loopfling", "sp_pl_kill", "sp_pl_loopkill"},
+    commands = {"help", "cancel", "makemesay", "sp_fling", "sp_loopfling", "sp_pl_bring", "sp_pl_goto", "sp_pl_makecriminal", "sp_pl_void", "sp_pl_kill", "sp_pl_loopkill"},
     chat_events = {  },
     player_added_event = nil,
     commands_tostring = function(self)
@@ -1074,7 +1074,7 @@ local Plugin = {
 
         ["sp_pl_void"] = {
             ["ListName"] = "sp_pl_void [ARGUMENT1]",
-            ["Description"] = "Repeatedly views through target players",
+            ["Description"] = "Sends target players into the void",
             ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
             ["Function"] = function(args,speaker)
               --CODE HERE
