@@ -379,7 +379,7 @@ local AdminHandler = {
                                 self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = CFrame.new(-944, 94, 2065) -- Location of criminal base
                                 if pcall(function() execCmd("sp_pl_bring " .. serializedchat[3], self.players.LocalPlayer) end) then
                                     task.spawn(function()
-                                        wait(15)
+                                        wait(2)
                                         self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
                                     end)
                                 end
@@ -393,7 +393,7 @@ local AdminHandler = {
                                 self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = CFrame.new(-944, 94, 2065) -- Location of criminal base
                                 if pcall(function() execCmd("sp_pl_bring " .. target.Name, self.players.LocalPlayer) end) then                                   
                                     task.spawn(function()
-                                        wait(15)
+                                        wait(2)
                                         self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
                                     end)
                                 end
@@ -1022,7 +1022,7 @@ local Plugin = {
 
                     -- Modified from IY source code, attaches to player
                     local char = self.players.LocalPlayer.Character
-                    local tchar = targetplayer.Character
+                    -- local tchar = targetplayer.Character
                     local hum = self.players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
                     local hrp = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8)
                     local hrp2 = targetplayer.Character:WaitForChild("HumanoidRootPart", 8)
@@ -1053,6 +1053,89 @@ local Plugin = {
                         self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
                     end
 
+                    wait(0.5)
+                end
+                PlayerHandler.targetaction_stop = function(self, targetplayer) -- Commands that will be executed when the stop condition is met
+                    pcall(function() CharacterAdded_Event:Disconnect() end)
+                    CharacterAdded_Event = nil
+                    PrisonLife:FastRespawn(OriginalTeam.Name)
+                    --wait(1)
+                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
+                    --print(tostring(targetplayer.Character.Name))
+                end
+                PlayerHandler.ignoreforcefield = true -- Set to true if you want the command to not wait for forcefields to disappear before executing on target
+                PlayerHandler.ignorefriends = false -- Set to true if you want the command to ignore friends
+                PlayerHandler.ignoreself = true -- Set to true if you want the command to ignore yourself
+                PlayerHandler.looping = false -- Set to true if you want the command to re-add target back to queue when they are alive again
+                PlayerHandler.requeue_after_job = false -- Set to true if you want the user to be requeued as a target after the job is completed instead of upon death. (Looping also has to be on)
+                PlayerHandler:Init(args, speaker)
+            end
+        },
+
+        ["sp_pl_void"] = {
+            ["ListName"] = "sp_pl_void [ARGUMENT1]",
+            ["Description"] = "Repeatedly views through target players",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+              local OriginalRotation = nil
+              local OriginalPosition = nil
+              local OriginalTeam = nil
+              local CharacterAdded_Event = nil
+
+                PlayerHandler.targetaction = function(self, targetplayer) -- Commands that will be executed on the target user
+                    OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
+                    OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))          
+                    OriginalTeam = self.players.LocalPlayer.Team
+
+                    -- If the user specifies a 2nd argument, we will bring the target in the 1st argument to the 2nd argument user instead of the local player
+
+
+                    PrisonLife:FastRespawn("Guards") 
+
+                    CharacterAdded_Event = self.players.LocalPlayer.CharacterAdded:Connect(function()
+                        --[[for i,v in pairs(self.players.LocalPlayer.Backpack:GetChildren()) do
+                            --if v:IsA("Tool") then
+                            --    pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack:FindFirstChildOfClass("Tool")) end)
+                            --end
+                        end--]]
+                         -- Handcuffs seem to work only
+                        wait(0.5)
+                        pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack.Handcuffs) end)
+                    end)
+
+                    -- Just a simple wait to make sure the player has changed team first (You could probably also just check the team change event but this is simple)
+                    wait(1)
+
+                    -- Modified from IY source code, attaches to player
+                    local char = self.players.LocalPlayer.Character
+                    -- local tchar = targetplayer.Character
+                    local hum = self.players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    local hrp = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8)
+                    local hrp2 = targetplayer.Character:WaitForChild("HumanoidRootPart", 8)
+                    hum.Name = "1"
+                    local newHum = hum:Clone()
+                    newHum.Parent = char
+                    newHum.Name = "Humanoid"
+                    wait()
+                    hum:Destroy()
+                    workspace.CurrentCamera.CameraSubject = char
+                    newHum.DisplayDistanceType = "None"
+                    -- local tool = speaker:FindFirstChildOfClass("Backpack"):FindFirstChildOfClass("Tool") or speaker.Character:FindFirstChildOfClass("Tool")
+                    local tool = speaker:FindFirstChildOfClass("Backpack"):WaitForChild("Handcuffs", 8) -- For some reason only handcuffs work?
+                    tool.Parent = char
+                    hrp.CFrame = hrp2.CFrame * CFrame.new(0, 0, 0) * CFrame.new(math.random(-100, 100)/200,math.random(-100, 100)/200,math.random(-100, 100)/200)
+                    local n = 0
+                    repeat
+                        wait(.1)
+                        n = n + 1
+                        hrp.CFrame = hrp2.CFrame
+                        pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack.Handcuffs) end)
+                    until ((tool.Parent ~= char or not hrp or not hrp2 or not hrp.Parent or not hrp2.Parent or n > 250) and n > 2) or n > 100
+
+                    -- Bring the now attached player to the void!
+                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = CFrame.new(49640668, 991523328, -50090952)
+                    
                     wait(0.5)
                 end
                 PlayerHandler.targetaction_stop = function(self, targetplayer) -- Commands that will be executed when the stop condition is met
