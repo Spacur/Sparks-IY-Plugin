@@ -290,8 +290,8 @@ TODO : Simplify command names and make system to only load game specific command
 
 --]]
 local AdminHandler = {
-    whitelist = {"M9KHD", "JasonFernandoFlores", "elahatun", "willywonkylonky", "willystillwonkylonky", "JankRedneck"},
-    commands = {"help", "cancel", "makemesay", "sp_fling", "sp_loopfling", "sp_pl_bring", "sp_pl_goto", "sp_pl_makecriminal", "sp_pl_void", "sp_pl_kill", "sp_pl_loopkill"},
+    whitelist = {"M9KHD", "JasonFernandoFlores", "willywonkylonky", "willystillwonkylonky", "JankRedneck"},
+    commands = {"help", "cancel", "makemesay", "sp_fling", "sp_loopfling", "sp_pl_bring", "sp_pl_goto", "sp_pl_makecriminal", "sp_pl_armoury", "sp_pl_void", "sp_pl_loopvoid", "sp_pl_kill", "sp_pl_loopkill"},
     chat_events = {  },
     player_added_event = nil,
     commands_tostring = function(self)
@@ -383,6 +383,26 @@ local AdminHandler = {
                                 
                                 game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest"):FireServer(unpack(args))
                                 pcall(function() execCmd("sp_pl_makecriminal " .. target.Name, self.players.LocalPlayer) end)                                 
+                            end
+                            break
+                        end
+                        if serializedchat[2] == "sp_pl_armoury" then
+                            if serializedchat[3] then
+                                local args = {
+                                    [1] = "/w " .. target.Name .. " Now sending user to armoury " .. serializedchat[3] .. " criminal",
+                                    [2] = "All"
+                                }
+                                
+                                game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest"):FireServer(unpack(args))
+                                pcall(function() execCmd("sp_pl_armoury " .. serializedchat[3], self.players.LocalPlayer) end)
+                            else
+                                local args = {
+                                    [1] = "/w " .. target.Name .. " Now sending you to armoury, please stand still",
+                                    [2] = "All"
+                                }
+                                
+                                game:GetService("ReplicatedStorage"):WaitForChild("DefaultChatSystemChatEvents"):WaitForChild("SayMessageRequest"):FireServer(unpack(args))
+                                pcall(function() execCmd("sp_pl_armoury " .. target.Name, self.players.LocalPlayer) end)                                 
                             end
                             break
                         end
@@ -819,12 +839,16 @@ local Plugin = {
                 local OriginalRotation = nil
                 local OriginalPosition = nil
                 PlayerHandler.targetaction = function(self, targetplayer) -- Commands that will be executed on the target user
+                    if targetplayer.Character:WaitForChild("Humanoid", 8).Health == 0 then return end
+                    if math.abs(self.targetplayer.Character:WaitForChild("HumanoidRootPart", 8).AssemblyLinearVelocity.y) > 200 then return end
+                    if self.targetplayer.Character:WaitForChild("Humanoid").Sit then return end
                     OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
                     OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))
                     execCmd("fly",speaker)
 					execCmd("fling",speaker)
                     execCmd("tweenspeed 0.50", self.speaker)
                     while true do
+                        execCmd("fling",speaker)
                         self.players.LocalPlayer.Character:WaitForChild("Humanoid", 8).Sit = false
 						self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = CFrame.new(self.targetplayer.Character:WaitForChild("HumanoidRootPart", 8).position + (self.targetplayer.Character:WaitForChild("HumanoidRootPart", 8).AssemblyLinearVelocity / 2)) -- Basic movement prediction
 						execCmd("tweengoto " .. self.targetplayer.Name, self.speaker)
@@ -845,7 +869,7 @@ local Plugin = {
                 PlayerHandler.ignorefriends = true -- Set to true if you want the command to ignore friends
                 PlayerHandler.ignoreself = true -- Set to true if you want the command to ignore yourself
                 PlayerHandler.looping = true -- Set to true if you want the command to re-add target back to queue when they are alive again
-                PlayerHandler.requeue_after_job = false -- Set to true if you want the user to be requeued as a target after the job is completed instead of upon death. (Looping also has to be on)
+                PlayerHandler.requeue_after_job = true -- Set to true if you want the user to be requeued as a target after the job is completed instead of upon death. (Looping also has to be on)
                 PlayerHandler:Init(args, speaker)
             end
         },
@@ -1138,6 +1162,86 @@ local Plugin = {
             end
         },
 
+        ["sp_pl_loopvoid"] = {
+            ["ListName"] = "sp_pl_loopvoid [ARGUMENT1]",
+            ["Description"] = "Sends target players into the void",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+              local OriginalRotation = nil
+              local OriginalPosition = nil
+              local OriginalTeam = nil
+              local CharacterAdded_Event = nil
+
+                PlayerHandler.targetaction = function(self, targetplayer) -- Commands that will be executed on the target user
+                    OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
+                    OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))          
+                    OriginalTeam = self.players.LocalPlayer.Team
+
+                    PrisonLife:FastRespawn("Guards") 
+
+                    CharacterAdded_Event = self.players.LocalPlayer.CharacterAdded:Connect(function()
+                        --[[for i,v in pairs(self.players.LocalPlayer.Backpack:GetChildren()) do
+                            --if v:IsA("Tool") then
+                            --    pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack:FindFirstChildOfClass("Tool")) end)
+                            --end
+                        end--]]
+                         -- Handcuffs seem to work only
+                        wait(0.5)
+                        pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack.Handcuffs) end)
+                    end)
+
+                    -- Just a simple wait to make sure the player has changed team first (You could probably also just check the team change event but this is simple)
+                    wait(1)
+
+                    -- Modified from IY source code, attaches to player
+                    local char = self.players.LocalPlayer.Character
+                    -- local tchar = targetplayer.Character
+                    local hum = self.players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    local hrp = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8)
+                    local hrp2 = targetplayer.Character:WaitForChild("HumanoidRootPart", 8)
+                    hum.Name = "1"
+                    local newHum = hum:Clone()
+                    newHum.Parent = char
+                    newHum.Name = "Humanoid"
+                    wait()
+                    hum:Destroy()
+                    workspace.CurrentCamera.CameraSubject = char
+                    newHum.DisplayDistanceType = "None"
+                    -- local tool = speaker:FindFirstChildOfClass("Backpack"):FindFirstChildOfClass("Tool") or speaker.Character:FindFirstChildOfClass("Tool")
+                    local tool = speaker:FindFirstChildOfClass("Backpack"):WaitForChild("Handcuffs", 8) -- For some reason only handcuffs work?
+                    tool.Parent = char
+                    hrp.CFrame = hrp2.CFrame * CFrame.new(0, 0, 0) * CFrame.new(math.random(-100, 100)/200,math.random(-100, 100)/200,math.random(-100, 100)/200)
+                    local n = 0
+                    repeat
+                        wait(.1)
+                        n = n + 1
+                        hrp.CFrame = hrp2.CFrame
+                        pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack.Handcuffs) end)
+                    until ((tool.Parent ~= char or not hrp or not hrp2 or not hrp.Parent or not hrp2.Parent or n > 250) and n > 2) or n > 100
+
+                    -- Bring the now attached player to the void!
+                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = CFrame.new(49640668, 991523328, -50090952)
+                    
+                    wait(0.5)
+                end
+                PlayerHandler.targetaction_stop = function(self, targetplayer) -- Commands that will be executed when the stop condition is met
+                    pcall(function() CharacterAdded_Event:Disconnect() end)
+                    CharacterAdded_Event = nil
+                    PrisonLife:FastRespawn(OriginalTeam.Name)
+                    --wait(1)
+                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
+                    --print(tostring(targetplayer.Character.Name))
+                end
+                PlayerHandler.ignoreforcefield = true -- Set to true if you want the command to not wait for forcefields to disappear before executing on target
+                PlayerHandler.ignorefriends = false -- Set to true if you want the command to ignore friends
+                PlayerHandler.ignoreself = true -- Set to true if you want the command to ignore yourself
+                PlayerHandler.looping = true -- Set to true if you want the command to re-add target back to queue when they are alive again
+                PlayerHandler.requeue_after_job = false -- Set to true if you want the user to be requeued as a target after the job is completed instead of upon death. (Looping also has to be on)
+                PlayerHandler:Init(args, speaker)
+            end
+        },
+
         ["sp_pl_makecriminal"] = {
             ["ListName"] = "sp_pl_makecriminal [ARGUMENT1]",
             ["Description"] = "Sends target players to criminal base",
@@ -1196,8 +1300,8 @@ local Plugin = {
                         pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack.Handcuffs) end)
                     until ((tool.Parent ~= char or not hrp or not hrp2 or not hrp.Parent or not hrp2.Parent or n > 250) and n > 2) or n > 100
 
-                    -- Bring the now attached player to the criminal base
-                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = CFrame.new(-944, 94, 2065) -- Location of criminal base
+                    -- Bring the now attached player to the criminal spawn
+                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = CFrame.new(-920, 164.5, 2138.7) -- Location of criminal base
                     wait(0.5)
                 end
                 PlayerHandler.targetaction_stop = function(self, targetplayer) -- Commands that will be executed when the stop condition is met
@@ -1215,7 +1319,243 @@ local Plugin = {
                 PlayerHandler.requeue_after_job = false -- Set to true if you want the user to be requeued as a target after the job is completed instead of upon death. (Looping also has to be on)
                 PlayerHandler:Init(args, speaker)
             end
+        },
+
+        ["sp_pl_armoury"] = {
+            ["ListName"] = "sp_pl_armoury [ARGUMENT1]",
+            ["Description"] = "Sends target players to armoury",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+              local OriginalRotation = nil
+              local OriginalPosition = nil
+              local OriginalTeam = nil
+              local CharacterAdded_Event = nil
+
+                PlayerHandler.targetaction = function(self, targetplayer) -- Commands that will be executed on the target user
+                    OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
+                    OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))          
+                    OriginalTeam = self.players.LocalPlayer.Team
+
+                    PrisonLife:FastRespawn("Guards") 
+
+                    CharacterAdded_Event = self.players.LocalPlayer.CharacterAdded:Connect(function()
+                        --[[for i,v in pairs(self.players.LocalPlayer.Backpack:GetChildren()) do
+                            --if v:IsA("Tool") then
+                            --    pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack:FindFirstChildOfClass("Tool")) end)
+                            --end
+                        end--]]
+                         -- Handcuffs seem to work only
+                        wait(0.5)
+                        pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack.Handcuffs) end)
+                    end)
+
+                    -- Just a simple wait to make sure the player has changed team first (You could probably also just check the team change event but this is simple)
+                    wait(1)
+
+                    -- Modified from IY source code, attaches to player
+                    local char = self.players.LocalPlayer.Character
+                    -- local tchar = targetplayer.Character
+                    local hum = self.players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    local hrp = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8)
+                    local hrp2 = targetplayer.Character:WaitForChild("HumanoidRootPart", 8)
+                    hum.Name = "1"
+                    local newHum = hum:Clone()
+                    newHum.Parent = char
+                    newHum.Name = "Humanoid"
+                    wait()
+                    hum:Destroy()
+                    workspace.CurrentCamera.CameraSubject = char
+                    newHum.DisplayDistanceType = "None"
+                    -- local tool = speaker:FindFirstChildOfClass("Backpack"):FindFirstChildOfClass("Tool") or speaker.Character:FindFirstChildOfClass("Tool")
+                    local tool = speaker:FindFirstChildOfClass("Backpack"):WaitForChild("Handcuffs", 8) -- For some reason only handcuffs work?
+                    tool.Parent = char
+                    hrp.CFrame = hrp2.CFrame * CFrame.new(0, 0, 0) * CFrame.new(math.random(-100, 100)/200,math.random(-100, 100)/200,math.random(-100, 100)/200)
+                    local n = 0
+                    repeat
+                        wait(.1)
+                        n = n + 1
+                        hrp.CFrame = hrp2.CFrame
+                        pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack.Handcuffs) end)
+                    until ((tool.Parent ~= char or not hrp or not hrp2 or not hrp.Parent or not hrp2.Parent or n > 250) and n > 2) or n > 100
+
+                    -- Bring the now attached player to the criminal spawn
+                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = CFrame.new(852, 100, 2264) -- Location of criminal base
+                    wait(0.5)
+                end
+                PlayerHandler.targetaction_stop = function(self, targetplayer) -- Commands that will be executed when the stop condition is met
+                    pcall(function() CharacterAdded_Event:Disconnect() end)
+                    CharacterAdded_Event = nil
+                    PrisonLife:FastRespawn(OriginalTeam.Name)
+                    --wait(1)
+                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
+                    --print(tostring(targetplayer.Character.Name))
+                end
+                PlayerHandler.ignoreforcefield = true -- Set to true if you want the command to not wait for forcefields to disappear before executing on target
+                PlayerHandler.ignorefriends = false -- Set to true if you want the command to ignore friends
+                PlayerHandler.ignoreself = true -- Set to true if you want the command to ignore yourself
+                PlayerHandler.looping = false -- Set to true if you want the command to re-add target back to queue when they are alive again
+                PlayerHandler.requeue_after_job = false -- Set to true if you want the user to be requeued as a target after the job is completed instead of upon death. (Looping also has to be on)
+                PlayerHandler:Init(args, speaker)
+            end
+        },
+
+        ["sp_pl_vendingjail"] = {
+            ["ListName"] = "sp_pl_vendingjail [ARGUMENT1]",
+            ["Description"] = "Sends target players to vending jail",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+              local OriginalRotation = nil
+              local OriginalPosition = nil
+              local OriginalTeam = nil
+              local CharacterAdded_Event = nil
+
+                PlayerHandler.targetaction = function(self, targetplayer) -- Commands that will be executed on the target user
+                    OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
+                    OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))          
+                    OriginalTeam = self.players.LocalPlayer.Team
+
+                    PrisonLife:FastRespawn("Guards") 
+
+                    CharacterAdded_Event = self.players.LocalPlayer.CharacterAdded:Connect(function()
+                        --[[for i,v in pairs(self.players.LocalPlayer.Backpack:GetChildren()) do
+                            --if v:IsA("Tool") then
+                            --    pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack:FindFirstChildOfClass("Tool")) end)
+                            --end
+                        end--]]
+                         -- Handcuffs seem to work only
+                        wait(0.5)
+                        pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack.Handcuffs) end)
+                    end)
+
+                    -- Just a simple wait to make sure the player has changed team first (You could probably also just check the team change event but this is simple)
+                    wait(1)
+
+                    -- Modified from IY source code, attaches to player
+                    local char = self.players.LocalPlayer.Character
+                    -- local tchar = targetplayer.Character
+                    local hum = self.players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    local hrp = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8)
+                    local hrp2 = targetplayer.Character:WaitForChild("HumanoidRootPart", 8)
+                    hum.Name = "1"
+                    local newHum = hum:Clone()
+                    newHum.Parent = char
+                    newHum.Name = "Humanoid"
+                    wait()
+                    hum:Destroy()
+                    workspace.CurrentCamera.CameraSubject = char
+                    newHum.DisplayDistanceType = "None"
+                    -- local tool = speaker:FindFirstChildOfClass("Backpack"):FindFirstChildOfClass("Tool") or speaker.Character:FindFirstChildOfClass("Tool")
+                    local tool = speaker:FindFirstChildOfClass("Backpack"):WaitForChild("Handcuffs", 8) -- For some reason only handcuffs work?
+                    tool.Parent = char
+                    hrp.CFrame = hrp2.CFrame * CFrame.new(0, 0, 0) * CFrame.new(math.random(-100, 100)/200,math.random(-100, 100)/200,math.random(-100, 100)/200)
+                    local n = 0
+                    repeat
+                        wait(.1)
+                        n = n + 1
+                        hrp.CFrame = hrp2.CFrame
+                        pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack.Handcuffs) end)
+                    until ((tool.Parent ~= char or not hrp or not hrp2 or not hrp.Parent or not hrp2.Parent or n > 250) and n > 2) or n > 100
+
+                    -- Bring the now attached player to the criminal spawn
+                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = CFrame.new(949, 101.4, 2341.75) -- Location of criminal base
+                    wait(0.5)
+                end
+                PlayerHandler.targetaction_stop = function(self, targetplayer) -- Commands that will be executed when the stop condition is met
+                    pcall(function() CharacterAdded_Event:Disconnect() end)
+                    CharacterAdded_Event = nil
+                    PrisonLife:FastRespawn(OriginalTeam.Name)
+                    --wait(1)
+                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
+                    --print(tostring(targetplayer.Character.Name))
+                end
+                PlayerHandler.ignoreforcefield = true -- Set to true if you want the command to not wait for forcefields to disappear before executing on target
+                PlayerHandler.ignorefriends = false -- Set to true if you want the command to ignore friends
+                PlayerHandler.ignoreself = true -- Set to true if you want the command to ignore yourself
+                PlayerHandler.looping = false -- Set to true if you want the command to re-add target back to queue when they are alive again
+                PlayerHandler.requeue_after_job = false -- Set to true if you want the user to be requeued as a target after the job is completed instead of upon death. (Looping also has to be on)
+                PlayerHandler:Init(args, speaker)
+            end
+        },
+
+        ["sp_pl_attach"] = {
+            ["ListName"] = "sp_pl_attach [ARGUMENT1]",
+            ["Description"] = "Attaches yourself to another player",
+            ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+              local OriginalRotation = nil
+              local OriginalPosition = nil
+              local OriginalTeam = nil
+              local CharacterAdded_Event = nil
+
+                PlayerHandler.targetaction = function(self, targetplayer) -- Commands that will be executed on the target user
+                    OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
+                    OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))          
+                    OriginalTeam = self.players.LocalPlayer.Team
+
+                    PrisonLife:FastRespawn("Guards") 
+
+                    CharacterAdded_Event = self.players.LocalPlayer.CharacterAdded:Connect(function()
+                        --[[for i,v in pairs(self.players.LocalPlayer.Backpack:GetChildren()) do
+                            --if v:IsA("Tool") then
+                            --    pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack:FindFirstChildOfClass("Tool")) end)
+                            --end
+                        end--]]
+                         -- Handcuffs seem to work only
+                        wait(0.5)
+                        pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack.Handcuffs) end)
+                    end)
+
+                    -- Just a simple wait to make sure the player has changed team first (You could probably also just check the team change event but this is simple)
+                    wait(1)
+
+                    -- Modified from IY source code, attaches to player
+                    local char = self.players.LocalPlayer.Character
+                    -- local tchar = targetplayer.Character
+                    local hum = self.players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    local hrp = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8)
+                    local hrp2 = targetplayer.Character:WaitForChild("HumanoidRootPart", 8)
+                    hum.Name = "1"
+                    local newHum = hum:Clone()
+                    newHum.Parent = char
+                    newHum.Name = "Humanoid"
+                    wait()
+                    hum:Destroy()
+                    workspace.CurrentCamera.CameraSubject = char
+                    newHum.DisplayDistanceType = "None"
+                    -- local tool = speaker:FindFirstChildOfClass("Backpack"):FindFirstChildOfClass("Tool") or speaker.Character:FindFirstChildOfClass("Tool")
+                    local tool = speaker:FindFirstChildOfClass("Backpack"):WaitForChild("Handcuffs", 8) -- For some reason only handcuffs work?
+                    tool.Parent = char
+                    hrp.CFrame = hrp2.CFrame * CFrame.new(0, 0, 0) * CFrame.new(math.random(-100, 100)/200,math.random(-100, 100)/200,math.random(-100, 100)/200)
+                    local n = 0
+                    repeat
+                        wait(.1)
+                        n = n + 1
+                        hrp.CFrame = hrp2.CFrame
+                        pcall (function() self.players.LocalPlayer.Character:WaitForChild("Humanoid", 10):EquipTool(self.players.LocalPlayer.Backpack.Handcuffs) end)
+                    until ((tool.Parent ~= char or not hrp or not hrp2 or not hrp.Parent or not hrp2.Parent or n > 250) and n > 2) or n > 100
+
+                    wait(5)
+                end
+                PlayerHandler.targetaction_stop = function(self, targetplayer) -- Commands that will be executed when the stop condition is met
+                    pcall(function() CharacterAdded_Event:Disconnect() end)
+                    CharacterAdded_Event = nil
+                    -- PrisonLife:FastRespawn(OriginalTeam.Name)
+                    --wait(1)
+                    self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
+                    --print(tostring(targetplayer.Character.Name))
+                end
+                PlayerHandler.ignoreforcefield = true -- Set to true if you want the command to not wait for forcefields to disappear before executing on target
+                PlayerHandler.ignorefriends = false -- Set to true if you want the command to ignore friends
+                PlayerHandler.ignoreself = true -- Set to true if you want the command to ignore yourself
+                PlayerHandler.looping = true -- Set to true if you want the command to re-add target back to queue when they are alive again
+                PlayerHandler.requeue_after_job = true -- Set to true if you want the user to be requeued as a target after the job is completed instead of upon death. (Looping also has to be on)
+                PlayerHandler:Init(args, speaker)
+            end
         }
+
      }
 }
 
