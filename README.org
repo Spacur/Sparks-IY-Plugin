@@ -1,3 +1,5 @@
 * Installation
 
-Copy the IY_FE_SPARK.iy file into your executors "Workspace" folder
+Rename the IY_FE_SPARK.lua file to IY_FE_SPARK.iy and copy the IY_FE_SPARK.iy file into your executors "Workspace" folder
+
+Reload your game/executor and run command "reloadplugin IY_FE_SPARK" into your Infinite Yield
