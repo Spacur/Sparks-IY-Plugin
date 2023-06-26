@@ -5,9 +5,6 @@ Rename the IY_FE_SPARK.lua file to IY_FE_SPARK.iy and copy the IY_FE_SPARK.iy fi
 Reload your game/executor and run command "reloadplugin IY_FE_SPARK" into your Infinite Yield
 
 * TODO
-   - X Optimise the Prisonlife:FastRespawn("Criminals") function to be instantly teleported contacting the criminal pad, and properly wait till user has changed teams before teleporting back. Also look into how user is able to keep skin when turned to criminal (Potentially via converting user to guard before touching pad?)
-   - X Prison Life command to grab guns automatically grab guns/again on respawn
-   - X Optimise the new Prisonlife kill method, allow it to be used whilst pistol is in backpack or drawn, properly wait till user has changed teams (if necessary) before teleporting to gun, and properly wait till user has gun before tp'ing back/executing kill. (Can utilise new grab gun function)
    - Debug GUI (Able to show current executing jobs, list of jobs etc.)
    - Interactive GUI allowing user to easily select jobs and target(s)/team(s)
    - Revamp the Refreshplayers function into smaller functions (One for init, player joined and player deleted) as right now it is destructive (Clears the whole job queue etc) when it comes to refreshing (NOW DONE BUT NEEDS TESTING, APPEARS TO NOT BE WORKING. PLAYERHANDLER CEASES FUNCTION)
