@@ -362,7 +362,7 @@ local AdminHandler = {
         return "/w " .. target.Name .. " To execute a command, please use the following example format : '.b fling John'. You can also hide it from chat by saying the msg '/c system' first and then the command afterwards."
     end,
 
-    -- If Command attribute is a function, the function will be executed. If the command is a string, the value of the string will be executed instead (Can be used as an alias) as the command alongside any arguments
+    -- If Command attribute is a function, the function will be executed. If the command is a string, the value of the string will be executed instead (Can be used as an alias) as the command alongside any arguments. For any commands with ArgsMinimum greater than 0, args and args_string parameters are available
     commands = {
        ["help"] = {
 	  ["Command"] = function(self, target)
@@ -669,8 +669,7 @@ local PrisonLife = {
        ["M4A1"] = false
     },
     FastRespawn = function(self, team)
-        local OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
-        local OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))
+        local OriginalPosition = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame
         if team == "Guards" then
             local args = {
                 [1] = "Bright blue"
@@ -772,8 +771,7 @@ local PrisonLife = {
     end,
     GrabGun = function(self, targetgun)
        if not (self.players.LocalPlayer.Backpack:FindFirstChild(targetgun) or self.players.LocalPlayer.Character:FindFirstChild(targetgun)) then
-	  local OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
-	  local OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))
+	  local OriginalPosition = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame
 
 	  if targetgun == "M9" then
 	     self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = CFrame.new(821.05, 101, 2251)
@@ -800,7 +798,7 @@ local PrisonLife = {
     AutoGrabGun = function(self)
        -- Only will set if player added event is not currently being used
        if not self.player_added_event then
-	  self.player_added_event = self.players.LocalPlayer.CharacterAdded:Connect(function(event_targetplayer) -- Rebind to new Humanoids
+	  self.player_added_event = self.players.LocalPlayer.CharacterAdded:Connect(function() -- Rebind to new Humanoids
 		for k,v in pairs(self.auto_grabgun) do
 		   if v then
 		      self:GrabGun(k)
@@ -843,82 +841,102 @@ local PrisonLife = {
     end,
     Kill = function(self, targetplayer, punchkillmethod)
        if not punchkillmethod then
-	  local OriginalTeam = self.players.LocalPlayer.Team
-	  if targetplayer.Team.Name == "Guards" and OriginalTeam.Name == "Guards" then
+	     local OriginalTeam = self.players.LocalPlayer.Team
+	     if targetplayer.Team.Name == "Guards" and OriginalTeam.Name == "Guards" then
+		self.team_changed_events[3] = self.teams.Inmates.PlayerAdded:Connect(function(targetplayer_inmates)
+		      if targetplayer_inmates == self.players.LocalPlayer then
+			 self:GrabGun("M9")
+			 pcall(function() self.team_changed_events[3]:Disconnect() end)
+			 self.team_changed_events[3] = nil
+		      end
+		end)
 		self:FastRespawn("Inmates")
-	  elseif targetplayer.Team.Name == "Inmates" and OriginalTeam.Name == "Inmates" then
+	     elseif targetplayer.Team.Name == "Inmates" and OriginalTeam.Name == "Inmates" then
+		self.team_changed_events[3] = self.teams.Criminals.PlayerAdded:Connect(function(targetplayer_criminals)
+		      if targetplayer_criminals == self.players.LocalPlayer then
+			 self:GrabGun("M9")
+			 pcall(function() self.team_changed_events[3]:Disconnect() end)
+			 self.team_changed_events[3] = nil
+		      end
+		end)
 		self:FastRespawn("Criminals")
-	  elseif targetplayer.Team.Name == "Criminals" and OriginalTeam.Name == "Criminals" then
+	     elseif targetplayer.Team.Name == "Criminals" and OriginalTeam.Name == "Criminals" then
+		self.team_changed_events[3] = self.teams.Inmates.PlayerAdded:Connect(function(targetplayer_inmates)
+		      if targetplayer_inmates == self.players.LocalPlayer then
+			 self:GrabGun("M9")
+			 pcall(function() self.team_changed_events[3]:Disconnect() end)
+			 self.team_changed_events[3] = nil
+		      end
+		end)
 		self:FastRespawn("Inmates")
-	  end
-	  self:GrabGun("M9")
+	     end
 
-	  local shoot_args = {
-	     [1] = {
+	     local shoot_args = {
 		[1] = {
-		   ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
-		   ["Distance"] = 0,
-		   ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-		   ["Hit"] = targetplayer.Character:WaitForChild("Head")
+		   [1] = {
+		      ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
+		      ["Distance"] = 0,
+		      ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		      ["Hit"] = targetplayer.Character:WaitForChild("Head", 8)
+		   },
+		   [2] = {
+		      ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
+		      ["Distance"] = 0,
+		      ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		      ["Hit"] = targetplayer.Character:WaitForChild("Head", 8)
+		   },
+		   [3] = {
+		      ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
+		      ["Distance"] = 0,
+		      ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		      ["Hit"] = targetplayer.Character:WaitForChild("Head", 8)
+		   },
+		   [4] = {
+		      ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
+		      ["Distance"] = 0,
+		      ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		      ["Hit"] = targetplayer.Character:WaitForChild("Head", 8)
+		   },
+		   [5] = {
+		      ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
+		      ["Distance"] = 0,
+		      ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		      ["Hit"] = targetplayer.Character:WaitForChild("Head", 8)
+		   },
+		   [6] = {
+		      ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
+		      ["Distance"] = 0,
+		      ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		      ["Hit"] = targetplayer.Character:WaitForChild("Head", 8)
+		   },
+		   [7] = {
+		      ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
+		      ["Distance"] = 0,
+		      ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		      ["Hit"] = targetplayer.Character:WaitForChild("Head", 8)
+		   },
+		   [8] = {
+		      ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
+		      ["Distance"] = 0,
+		      ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		      ["Hit"] = targetplayer.Character:WaitForChild("Head", 8)
+		   },
+		   [9] = {
+		      ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
+		      ["Distance"] = 0,
+		      ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		      ["Hit"] = targetplayer.Character:WaitForChild("Head", 8)
+		   },
+		   [10] = {
+		      ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
+		      ["Distance"] = 0,
+		      ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		      ["Hit"] = targetplayer.Character:WaitForChild("Head", 8)
+		   }
 		},
-		[2] = {
-		   ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
-		   ["Distance"] = 0,
-		   ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-		   ["Hit"] = targetplayer.Character:WaitForChild("Head")
-		},
-		[3] = {
-		   ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
-		   ["Distance"] = 0,
-		   ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-		   ["Hit"] = targetplayer.Character:WaitForChild("Head")
-		},
-		[4] = {
-		   ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
-		   ["Distance"] = 0,
-		   ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-		   ["Hit"] = targetplayer.Character:WaitForChild("Head")
-		},
-		[5] = {
-		   ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
-		   ["Distance"] = 0,
-		   ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-		   ["Hit"] = targetplayer.Character:WaitForChild("Head")
-		},
-		[6] = {
-		   ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
-		   ["Distance"] = 0,
-		   ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-		   ["Hit"] = targetplayer.Character:WaitForChild("Head")
-		},
-		[7] = {
-		   ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
-		   ["Distance"] = 0,
-		   ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-		   ["Hit"] = targetplayer.Character:WaitForChild("Head")
-		},
-		[8] = {
-		   ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
-		   ["Distance"] = 0,
-		   ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-		   ["Hit"] = targetplayer.Character:WaitForChild("Head")
-		},
-		[9] = {
-		   ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
-		   ["Distance"] = 0,
-		   ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-		   ["Hit"] = targetplayer.Character:WaitForChild("Head")
-		},
-		[10] = {
-		   ["RayObject"] = Ray.new(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)),
-		   ["Distance"] = 0,
-		   ["Cframe"] = CFrame.new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-		   ["Hit"] = targetplayer.Character:WaitForChild("Head")
-		}
-	     },
-	     [2] = game:GetService("Players").LocalPlayer.Backpack:WaitForChild("M9", 8) or game:GetService("Players").LocalPlayer.Character:WaitForChild("M9", 8)
-	  }
-	  game:GetService("ReplicatedStorage"):WaitForChild("ShootEvent"):FireServer(unpack(shoot_args))
+		[2] = game:GetService("Players").LocalPlayer.Backpack:WaitForChild("M9", 1) or game:GetService("Players").LocalPlayer.Character:WaitForChild("M9", 1)
+	     }
+	     game:GetService("ReplicatedStorage"):WaitForChild("ShootEvent"):FireServer(unpack(shoot_args))
        else
 	  while targetplayer.Character:WaitForChild("Humanoid").Health > 0 do
 	     execCmd("goto " .. targetplayer.Name, self.speaker)
@@ -945,6 +963,7 @@ local CatbotHandler = {
     catbot_deleted_event = nil,
     catbot_thread = nil,
     catbot_respawn_on_owner = true,
+    catbot_stealth = false,
     players = game:GetService("Players"),
     catbot_owner = "bloxiebirdie",
     Init = function(self)
@@ -957,7 +976,7 @@ local CatbotHandler = {
 
        self.catbot_thread = coroutine.create(function()
 	     execCmd("spin 1", game:GetService("Players").LocalPlayer)
-	     while true do
+	     while not self.catbot_stealth do
 		execCmd("undance", game:GetService("Players").LocalPlayer)
 		execCmd("dance", game:GetService("Players").LocalPlayer)
 		wait(10)
@@ -966,7 +985,7 @@ local CatbotHandler = {
        if self.catbot_respawn_on_owner then
 	  execCmd("goto " .. self.catbot_owner, game:GetService("Players").LocalPlayer)
 	  PrisonLife.PositionOverride = function()
-	     if self.players:FindFirstChild(self.catbot_owner) then
+	     if self.players:FindFirstChild(self.catbot_owner) and self.catbot_respawn_on_owner then
 		return self.players:FindFirstChild(self.catbot_owner).Character:WaitForChild("HumanoidRootPart", 8).CFrame
 	     else
 		return nil
@@ -977,7 +996,15 @@ local CatbotHandler = {
 
        self.catbot_event = game:GetService("Players").LocalPlayer.CharacterAdded:Connect(function(event_targetplayer)
 	     event_targetplayer:WaitForChild("HumanoidRootPart", 8)
-	     execCmd("spin 1", game:GetService("Players").LocalPlayer)
+	     if not self.catbot_stealth then
+		execCmd("spin 1", game:GetService("Players").LocalPlayer)
+	     else
+		-- Hidden in the void
+		-- Arbritary wait to allow other components of script to action things on respawn before being sent to the void
+		wait(5)
+		self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = CFrame.new(49640668, 991523328, -50090952)
+		-- self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).AssemblyLinearVelocity = Vector3.new(0, 100000000, 0)
+	     end
        end)
     end
 
@@ -1030,12 +1057,38 @@ local Plugin = {
             ["Aliases"] = {"sp_cancel"},
             ["Function"] = function(args,speaker)
               --CODE HERE
-                -- CatbotHandler.catbot_respawn_on_owner = not CatbotHandler.catbot_respawn_on_owner
-		PrisonLife.KeepPosition = not PrisonLife.KeepPosition
-		if PrisonLife.KeepPosition then
+                CatbotHandler.catbot_respawn_on_owner = not CatbotHandler.catbot_respawn_on_owner
+		if CatbotHandler.catbot_respawn_on_owner then
 		   notify("CatbotHandler","Now will respawn on owner")
 		else
 		   notify("CatbotHandler","Will no longer respawn on owner")
+		end
+            end
+        },
+
+	["sp_catbothandler_stealth"] = {
+            ["ListName"] = "sp_catbothandler_stealth [ARGUMENT1]",
+            ["Description"] = "Activates stealth mode, will stop spinning and dancing.",
+            ["Aliases"] = {"sp_cancel"},
+            ["Function"] = function(args,speaker)
+              --CODE HERE
+                -- CatbotHandler.catbot_respawn_on_owner = not CatbotHandler.catbot_respawn_on_owner
+	       CatbotHandler.catbot_stealth = not CatbotHandler.catbot_stealth
+		if CatbotHandler.catbot_stealth then
+		   notify("CatbotHandler","Catbot now in stealth mode")
+		   CatbotHandler.catbot_respawn_on_owner = false
+		else
+		   notify("CatbotHandler","Catbot no longer in stealth mode")
+		   CatbotHandler.catbot_respawn_on_owner = true
+		   CatbotHandler.catbot_thread = coroutine.create(function()
+			 execCmd("spin 1", game:GetService("Players").LocalPlayer)
+			 while not CatbotHandler.catbot_stealth do
+			    execCmd("undance", game:GetService("Players").LocalPlayer)
+			    execCmd("dance", game:GetService("Players").LocalPlayer)
+			    wait(10)
+			 end
+		   end)
+		   coroutine.resume(CatbotHandler.catbot_thread)
 		end
             end
         },
@@ -1203,12 +1256,10 @@ local Plugin = {
             ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
             ["Function"] = function(args,speaker)
               --CODE HERE
-                local OriginalRotation = nil
                 local OriginalPosition = nil
                 PlayerHandler.targetaction = function(self, targetplayer) -- Commands that will be executed on the target user
 		   if self.jobs_executed == 0 then
-		      OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
-		      OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))
+		      OriginalPosition = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame
 		   end
 		   while true do
 		      execCmd("fly",speaker)
@@ -1246,12 +1297,10 @@ local Plugin = {
             ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
             ["Function"] = function(args,speaker)
                 --CODE HERE
-                  local OriginalRotation = nil
                   local OriginalPosition = nil
                   PlayerHandler.targetaction = function(self, targetplayer) -- Commands that will be executed on the target user
 		     if self.jobs_executed == 0 then
-			OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
-			OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))
+			OriginalPosition = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame
 		     end
 		     while true do
 			execCmd("fly",speaker)
@@ -1421,21 +1470,16 @@ local Plugin = {
             ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
             ["Function"] = function(args,speaker)
               --CODE HERE
-                local OriginalRotation = nil
-                local OriginalPosition = nil
+                -- local OriginalPosition = nil
                 PlayerHandler.targetaction = function(self, targetplayer) -- Commands that will be executed on the target user
-		   --[[ For Punch Kill Method
-		   if self.jobs_executed == 0 then
-		      OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
-		      OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))
-		      end
-		   --]]
+		   --[[if self.jobs_executed == 0 then
+		      OriginalPosition = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame
+		      end]]--
 		   PrisonLife:Kill(targetplayer, false)
+                   targetplayer.Character:WaitForChild("Humanoid").Died:Wait()
                 end
                 PlayerHandler.targetaction_stop = function(self, targetplayer) -- Commands that will be executed when the stop condition is met
-		   --[[ For Punch Kill Method
-		   self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
-		   --]]
+		   -- self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
 		   return
                 end
                 PlayerHandler.ignoreforcefield = false -- Set to true if you want the command to not wait for forcefields to disappear before executing on target
@@ -1453,21 +1497,16 @@ local Plugin = {
             ["Aliases"] = {"ALIAS1","ALIAS2","ALIAS3"},
             ["Function"] = function(args,speaker)
               --CODE HERE
-                local OriginalRotation = nil
-                local OriginalPosition = nil
+	       -- local OriginalPosition = nil
                 PlayerHandler.targetaction = function(self, targetplayer) -- Commands that will be executed on the target user
-		   --[[ For Punch Kill Method
-		   if self.jobs_executed == 0 then
-		      OriginalRotation = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).rotation
-		      OriginalPosition = CFrame.new(self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).position) * CFrame.Angles(math.rad(OriginalRotation.x), math.rad(OriginalRotation.y), math.rad(OriginalRotation.z))
-		      end
-		   --]]
+		   --[[if self.jobs_executed == 0 then
+		      OriginalPosition = self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame
+		      end--]]
 		   PrisonLife:Kill(targetplayer, false)
+                   targetplayer.Character:WaitForChild("Humanoid").Died:Wait()
                 end
                 PlayerHandler.targetaction_stop = function(self, targetplayer) -- Commands that will be executed when the stop condition is met
-		   --[[ For Punch Kill Method
-		   self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
-		   --]]
+		   -- self.players.LocalPlayer.Character:WaitForChild("HumanoidRootPart", 8).CFrame = OriginalPosition
 		   return
                 end
                 PlayerHandler.ignoreforcefield = false -- Set to true if you want the command to not wait for forcefields to disappear before executing on target

@@ -7,6 +7,7 @@ Reload your game/executor and run command "reloadplugin IY_FE_SPARK" into your I
 * TODO
    - Debug GUI (Able to show current executing jobs, list of jobs etc.)
    - Interactive GUI allowing user to easily select jobs and target(s)/team(s)
+   - Looping Timeout Function in Job Handler (If targetplayer has not died after a certain designated time, quit and skip job)
    - Revamp the Refreshplayers function into smaller functions (One for init, player joined and player deleted) as right now it is destructive (Clears the whole job queue etc) when it comes to refreshing (NOW DONE BUT NEEDS TESTING, APPEARS TO NOT BE WORKING. PLAYERHANDLER CEASES FUNCTION)
    - Playerhandler variables override (To override the ignore self, ignore forcefield, ignore friends etc variables)
    - Click tp, Prison Life sword and Prison Life click kill tools. Add option for player handler to be called non interactively so therefore no notifications
@@ -22,4 +23,7 @@ Reload your game/executor and run command "reloadplugin IY_FE_SPARK" into your I
    - Automatic game detection/appending to the Plugins table as appropriate based on game
    - (New ideal solution idea : Use a FindFirstChild or WaitForChild with a very small delay. If it fails then the longer WaitForChild check can occur. Should allow for very fast execution) Look at potentially improving the job handler wait for forcefield mechanic, instead of using WaitForChild with a yield of 1 second it may be instead possible to use ChildAdded and :Wait() to check for forcefield (when user spawns specifically this is important for). May be faster? Or just figure out what time specifically the ForceField is added on spawn so we can just set the yield to that time instead of 1 second.
    - FIX POTENTIAL RARE BUG : When users spawn and job starts waiting for forcefield but then they die again or something like that, appears to crash game? (the wait(0.1) command at line 94 may have fixed this but need further testing)
+   - When the script is to be segmented, PlayerHandler, CatbotHandler, GUIHandler, AdminHandler etc will be part of the core script. External scripts/modules can add functionality to these core features in the form of appending to a table (Example appending to the admin commands table or appending a function to the PlayerHandler/CatbotHandler which will be executed on init)
+   - Move the PrisonLife.PositionOverride out of the PrisonLife and put into a generic table (Of variables that can be overriden?) that can be referenced by any part of the script (Along with other common variables such as Players and Teams service)
+   - Redesign of job handler/queue to accept functions to execute on targetplayer job. Functions can be executed sequentially on targetplayer or in parallel each on their own thread.
 
